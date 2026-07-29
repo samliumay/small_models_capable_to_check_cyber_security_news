@@ -3,10 +3,8 @@ title: Siber Güvenlik Haber Asistanı
 emoji: 🛡️
 colorFrom: blue
 colorTo: indigo
-sdk: gradio
-sdk_version: 6.20.0
-app_file: app.py
-python_version: "3.11"
+sdk: docker
+app_port: 7860
 fullWidth: true
 short_description: Ollama ve araç çağrılarıyla güncel CVE ve siber güvenlik haberleri
 tags:
@@ -122,23 +120,18 @@ döngülerini engeller.
 | `MISP_API_KEY` | boş | MISP erişim anahtarı |
 | `MISP_VERIFY_TLS` | `true` | MISP TLS sertifika doğrulaması |
 
-## Hugging Face Spaces
+## Hugging Face Docker Space
 
-Bu depo Gradio Space dosya düzenine hazırdır. Ancak standart bir Space,
-bilgisayarınızdaki yerel Ollama’ya erişemez. İki dağıtım seçeneği vardır:
+Depo, Ollama ile Gradio'yu aynı container içinde çalıştıran Docker Space düzenine
+hazırdır. `start.sh` önce Ollama'yı başlatır, `OLLAMA_MODEL` ile seçilen modeli
+indirir ve ardından Gradio'yu `0.0.0.0:7860` üzerinde açar. Yalnızca Gradio portu
+dışarı açılır; Ollama container içinde `127.0.0.1:11434` adresinde kalır.
 
-1. **Uzak Ollama geçidi:** Space secret ayarlarına `OLLAMA_BASE_URL`,
-   `OLLAMA_API_KEY` ve gerekli haber API anahtarlarını ekleyin. Ollama’yı doğrudan
-   internete açmayın; TLS ve kimlik doğrulama kullanan bir geçit arkasına koyun.
-2. **Docker/GPU Space:** Ollama ve modeli aynı Docker Space içinde çalıştırın.
-   `qwen3.6:latest` yaklaşık 23 GB olduğundan uygun GPU belleği, disk alanı ve
-   başlangıç süresi gerekir. Bu depo henüz bu donanım seçeneğini zorunlu kılmaz.
-
-Uzak geçit hazır olduğunda Space oluşturma ve yükleme örneği:
+Space oluşturma ve yükleme örneği:
 
 ```bash
-hf auth login
-hf repos create KULLANICI_ADI/siber-guvenlik-asistani --repo-type space --space-sdk gradio
+hf auth login --add-to-git-credential
+hf repos create KULLANICI_ADI/siber-guvenlik-asistani --repo-type space --sdk docker
 git remote add space https://huggingface.co/spaces/KULLANICI_ADI/siber-guvenlik-asistani
 git push space main
 ```
@@ -146,6 +139,47 @@ git push space main
 Space secret değerlerini Hugging Face web arayüzündeki **Settings → Variables and
 secrets** bölümünden ekleyin. Her push sonrasında Space otomatik olarak yeniden
 oluşturulur.
+
+Önerilen Space değişkenleri:
+
+```text
+OLLAMA_MODEL=qwen3.6:latest
+OLLAMA_NUM_CTX=16384
+```
+
+`NEWSAPI_KEY`, `NVD_API_KEY`, `OTX_API_KEY` ve MISP erişim bilgilerini yalnızca
+Space secret olarak ekleyin. Bunları Dockerfile'a veya Git deposuna yazmayın.
+
+`qwen3.6:latest` yaklaşık 24 GB'tır. Model ağırlıkları ile çalışma belleğine yer
+kalması için 48 GB VRAM'li bir GPU güvenli tercihtir. Daha küçük donanım ve daha
+düşük maliyet için örneğin `OLLAMA_MODEL=qwen3.5:9b` kullanılabilir.
+
+Space diski geçiciyse model her yeniden oluşturmada tekrar indirilir. Bir Storage
+Bucket `/data` yoluna bağlanırsa Space değişkenini aşağıdaki gibi ayarlayarak model
+önbelleği kalıcı tutulabilir:
+
+```text
+OLLAMA_MODELS=/data/ollama-models
+```
+
+### Docker'ı yerelde sınama
+
+CPU ile yalnızca container başlangıcını sınamak için:
+
+```bash
+docker build -t siber-guvenlik-asistani .
+docker run --rm -p 7860:7860 \
+  -e OLLAMA_MODEL=qwen3.5:4b \
+  siber-guvenlik-asistani
+```
+
+NVIDIA Container Toolkit kurulu bir makinede GPU ile:
+
+```bash
+docker run --rm --gpus all -p 7860:7860 \
+  -e OLLAMA_MODEL=qwen3.6:latest \
+  siber-guvenlik-asistani
+```
 
 ## Testler
 

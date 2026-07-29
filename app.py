@@ -219,5 +219,15 @@ with gr.Blocks(title="Siber Güvenlik Haber Asistanı") as demo:
     )
 
 
+def launch_demo() -> None:
+    """Yerel ve Docker Space ortamlarında Gradio sunucusunu başlat."""
+    demo.queue(default_concurrency_limit=4).launch(
+        css=CSS,
+        theme=gr.themes.Soft(),
+        server_name=os.getenv("GRADIO_SERVER_NAME", "127.0.0.1"),
+        server_port=int(os.getenv("GRADIO_SERVER_PORT", "7860")),
+    )
+
+
 if __name__ == "__main__":
-    demo.queue(default_concurrency_limit=4).launch(css=CSS, theme=gr.themes.Soft())
+    launch_demo()
