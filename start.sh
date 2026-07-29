@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-MODEL_NAME="${OLLAMA_MODEL:-qwen3.6:latest}"
+MODEL_NAME="${OLLAMA_MODEL:-qwen3.5:4b}"
 MODEL_DIR="${OLLAMA_MODELS:-${HOME}/.ollama/models}"
 
 export OLLAMA_HOST="${OLLAMA_HOST:-127.0.0.1:11434}"

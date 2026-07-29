@@ -21,6 +21,9 @@ sonucunu, tur numarasını ve nihai yanıtı kullanıcıya gösterir.
 - GDELT için yeniden deneme, geniş zaman aşımı ve beş dakikalık önbellek
 - Haber kaynakları çalışmadığında CISA ve CERT/CC duyurularına kontrollü geri dönüş
 - API anahtarlarının yalnızca sunucu ortam değişkenlerinden okunması
+- Arayüzden 1B, 4B, 9B veya 35B model seçimi
+- Temperature, Top-K ve Top-P üretim kontrolleri
+- Tüm ajan turlarını kapsayan girdi, çıktı ve toplam token istatistikleri
 - Yerel Python, Docker ve Hugging Face Docker Space desteği
 
 ## Mimari
@@ -167,6 +170,9 @@ döngülerini engeller.
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | Model yanıt zaman aşımı |
 | `OLLAMA_NUM_CTX` | `16384` | Model bağlam penceresi |
 | `OLLAMA_TEMPERATURE` | `0.2` | Üretim sıcaklığı |
+| `OLLAMA_TOP_K` | `20` | Varsayılan Top-K örnekleme sınırı |
+| `OLLAMA_TOP_P` | `0.95` | Varsayılan nucleus sampling eşiği |
+| `OLLAMA_PULL_TIMEOUT_SECONDS` | `3600` | Arayüzden seçilen modelin indirme sınırı |
 | `OLLAMA_KEEP_ALIVE` | `10m` | Modelin bellekte tutulma süresi |
 | `GRADIO_SERVER_NAME` | `127.0.0.1` | Gradio dinleme adresi |
 | `GRADIO_SERVER_PORT` | `7860` | Gradio portu |
@@ -216,6 +222,9 @@ docker run --rm --gpus all -p 7860:7860 \
 
 `start.sh`; Ollama sunucusunu başlatır, eksikse modeli indirir ve Gradio'yu
 `0.0.0.0:7860` üzerinde çalıştırır. Ollama portu container dışına açılmaz.
+Docker image varsayılan olarak hızlı başlangıç için `qwen3.5:4b` modelini indirir.
+Arayüzde seçilen diğer allowlist modelleri ilk kullanımda Ollama üzerinden
+otomatik olarak indirilir.
 
 ## Hugging Face Docker Space
 

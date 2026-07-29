@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from copy import deepcopy
 from collections.abc import Generator
@@ -39,6 +40,9 @@ class OllamaConnectionError(RuntimeError):
     """Ollama sunucusuna erişilemediğinde kullanılır."""
 
 
+_MODEL_PULL_LOCK = threading.Lock()
+
+
 class OllamaLocalModelManagement:
     """Ollama `/api/chat` uç noktası için sınırlı bir ajan döngüsü."""
 
@@ -49,6 +53,9 @@ class OllamaLocalModelManagement:
         tools: CyberSecurityTools | None = None,
         session: requests.Session | None = None,
         max_tool_rounds: int = 6,
+        temperature: float | None = None,
+        top_k: int | None = None,
+        top_p: float | None = None,
     ) -> None:
         self.model_name = model_name or os.getenv("OLLAMA_MODEL", "qwen3.6:latest")
         self.base_url = (base_url or os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")).rstrip(
@@ -57,6 +64,31 @@ class OllamaLocalModelManagement:
         self.session = session or requests.Session()
         self.tools = tools or CyberSecurityTools()
         self.max_tool_rounds = max(1, min(max_tool_rounds, 10))
+        self.temperature = max(
+            0.0,
+            min(
+                float(
+                    temperature
+                    if temperature is not None
+                    else os.getenv("OLLAMA_TEMPERATURE", "0.2")
+                ),
+                2.0,
+            ),
+        )
+        self.top_k = max(
+            1,
+            min(
+                int(top_k if top_k is not None else os.getenv("OLLAMA_TOP_K", "20")),
+                100,
+            ),
+        )
+        self.top_p = max(
+            0.05,
+            min(
+                float(top_p if top_p is not None else os.getenv("OLLAMA_TOP_P", "0.95")),
+                1.0,
+            ),
+        )
 
     def _system_message(self) -> dict[str, str]:
         now = datetime.now(UTC).isoformat(timespec="seconds")
@@ -75,7 +107,9 @@ class OllamaLocalModelManagement:
             "stream": False,
             "think": False,
             "options": {
-                "temperature": float(os.getenv("OLLAMA_TEMPERATURE", "0.2")),
+                "temperature": self.temperature,
+                "top_k": self.top_k,
+                "top_p": self.top_p,
                 "num_ctx": int(os.getenv("OLLAMA_NUM_CTX", "16384")),
             },
             "keep_alive": os.getenv("OLLAMA_KEEP_ALIVE", "10m"),
@@ -110,6 +144,74 @@ class OllamaLocalModelManagement:
             raise OllamaConnectionError("Ollama geçerli bir `message` alanı döndürmedi.")
         return data
 
+    def _auth_headers(self) -> dict[str, str]:
+        if api_key := os.getenv("OLLAMA_API_KEY"):
+            return {"Authorization": f"Bearer {api_key}"}
+        return {}
+
+    def available_models(self) -> list[str]:
+        """Ollama sunucusunda indirilmiş model adlarını döndür."""
+        try:
+            response = self.session.get(
+                f"{self.base_url}/api/tags",
+                headers=self._auth_headers(),
+                timeout=(5, 20),
+            )
+            response.raise_for_status()
+            return [
+                item["name"]
+                for item in response.json().get("models", [])
+                if isinstance(item.get("name"), str)
+            ]
+        except (requests.RequestException, ValueError, KeyError) as exc:
+            raise OllamaConnectionError(
+                f"Ollama model listesi alınamadı: {exc}"
+            ) from exc
+
+    def model_is_available(self) -> bool:
+        requested = self.model_name.removesuffix(":latest")
+        return any(
+            name == self.model_name or name.removesuffix(":latest") == requested
+            for name in self.available_models()
+        )
+
+    def ensure_model(self) -> dict[str, Any]:
+        """Seçili model eksikse Ollama registry'den kontrollü biçimde indir."""
+        if self.model_is_available():
+            return {"model": self.model_name, "downloaded": False}
+
+        with _MODEL_PULL_LOCK:
+            if self.model_is_available():
+                return {"model": self.model_name, "downloaded": False}
+            try:
+                response = self.session.post(
+                    f"{self.base_url}/api/pull",
+                    headers=self._auth_headers(),
+                    json={"model": self.model_name, "stream": False},
+                    timeout=(
+                        10,
+                        int(os.getenv("OLLAMA_PULL_TIMEOUT_SECONDS", "3600")),
+                    ),
+                )
+                response.raise_for_status()
+                data = response.json()
+            except requests.Timeout as exc:
+                raise OllamaConnectionError(
+                    f"{self.model_name} modeli indirilirken zaman aşımı oluştu."
+                ) from exc
+            except (requests.RequestException, ValueError) as exc:
+                detail = ""
+                if "response" in locals():
+                    detail = response.text[:500]
+                raise OllamaConnectionError(
+                    f"{self.model_name} modeli indirilemedi: {detail or exc}"
+                ) from exc
+            if data.get("status") != "success":
+                raise OllamaConnectionError(
+                    f"Ollama model indirmeyi tamamlamadı: {data.get('status', data)}"
+                )
+            return {"model": self.model_name, "downloaded": True}
+
     @staticmethod
     def _conversation_messages(history: list[dict[str, Any]] | None) -> list[dict[str, str]]:
         clean: list[dict[str, str]] = []
@@ -132,6 +234,9 @@ class OllamaLocalModelManagement:
             *self._conversation_messages(history),
             {"role": "user", "content": user_message.strip()},
         ]
+        total_prompt_tokens = 0
+        total_response_tokens = 0
+        total_duration_ns = 0
 
         for turn in range(1, self.max_tool_rounds + 2):
             try:
@@ -140,6 +245,9 @@ class OllamaLocalModelManagement:
                 yield {"type": "error", "content": str(exc)}
                 return
 
+            total_prompt_tokens += response.get("prompt_eval_count") or 0
+            total_response_tokens += response.get("eval_count") or 0
+            total_duration_ns += response.get("total_duration") or 0
             assistant_message = response["message"]
             messages.append(assistant_message)
             tool_calls = assistant_message.get("tool_calls") or []
@@ -153,11 +261,12 @@ class OllamaLocalModelManagement:
                     "turn": turn,
                     "content": content,
                     "metrics": {
-                        "prompt_tokens": response.get("prompt_eval_count"),
-                        "response_tokens": response.get("eval_count"),
-                        "total_duration_seconds": round(
-                            (response.get("total_duration") or 0) / 1_000_000_000, 2
-                        ),
+                        "model": self.model_name,
+                        "prompt_tokens": total_prompt_tokens,
+                        "response_tokens": total_response_tokens,
+                        "total_tokens": total_prompt_tokens + total_response_tokens,
+                        "total_duration_seconds": round(total_duration_ns / 1_000_000_000, 2),
+                        "turns": turn,
                     },
                 }
                 return
@@ -212,21 +321,14 @@ class OllamaLocalModelManagement:
 
     def health(self) -> dict[str, Any]:
         try:
-            headers = {}
-            if api_key := os.getenv("OLLAMA_API_KEY"):
-                headers["Authorization"] = f"Bearer {api_key}"
-            response = self.session.get(
-                f"{self.base_url}/api/tags", headers=headers, timeout=(3, 10)
-            )
-            response.raise_for_status()
-            models = [item.get("name") for item in response.json().get("models", [])]
+            models = self.available_models()
             return {
                 "ok": self.model_name in models,
                 "model": self.model_name,
                 "available_models": models,
                 "base_url": self.base_url,
             }
-        except (requests.RequestException, ValueError) as exc:
+        except (OllamaConnectionError, requests.RequestException, ValueError) as exc:
             return {"ok": False, "model": self.model_name, "error": str(exc)}
 
 

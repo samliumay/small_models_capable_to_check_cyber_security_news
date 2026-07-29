@@ -92,7 +92,10 @@ class AgentLoopTests(unittest.TestCase):
                                 }
                             }
                         ],
-                    }
+                    },
+                    "prompt_eval_count": 10,
+                    "eval_count": 2,
+                    "total_duration": 1_000_000_000,
                 }
             ),
             FakeResponse(
@@ -103,6 +106,7 @@ class AgentLoopTests(unittest.TestCase):
                     },
                     "prompt_eval_count": 42,
                     "eval_count": 8,
+                    "total_duration": 2_000_000_000,
                 }
             ),
         ]
@@ -119,9 +123,35 @@ class AgentLoopTests(unittest.TestCase):
         self.assertEqual([event["type"] for event in events], ["tool", "final"])
         self.assertEqual(events[0]["name"], "ornek_arac")
         self.assertEqual(events[1]["content"], "Türkçe nihai yanıt.")
+        self.assertEqual(events[1]["metrics"]["prompt_tokens"], 52)
+        self.assertEqual(events[1]["metrics"]["response_tokens"], 10)
+        self.assertEqual(events[1]["metrics"]["total_tokens"], 62)
+        self.assertEqual(events[1]["metrics"]["total_duration_seconds"], 3.0)
         second_messages = session.post.call_args_list[1].kwargs["json"]["messages"]
         self.assertEqual(second_messages[-1]["role"], "tool")
         self.assertEqual(second_messages[-1]["tool_name"], "ornek_arac")
+        options = session.post.call_args_list[0].kwargs["json"]["options"]
+        self.assertEqual(options["top_k"], 20)
+        self.assertEqual(options["top_p"], 0.95)
+
+    def test_missing_model_is_pulled_once(self):
+        session = Mock()
+        session.get.side_effect = [
+            FakeResponse({"models": []}),
+            FakeResponse({"models": []}),
+        ]
+        session.post.return_value = FakeResponse({"status": "success"})
+        agent = OllamaLocalModelManagement(
+            session=session,
+            tools=Mock(),
+            model_name="qwen3.5:4b",
+        )
+
+        result = agent.ensure_model()
+
+        self.assertTrue(result["downloaded"])
+        pull_payload = session.post.call_args.kwargs["json"]
+        self.assertEqual(pull_payload, {"model": "qwen3.5:4b", "stream": False})
 
 
 if __name__ == "__main__":
