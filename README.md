@@ -1,117 +1,184 @@
----
-title: Siber Güvenlik Haber Asistanı
-emoji: 🛡️
-colorFrom: blue
-colorTo: indigo
-sdk: docker
-app_port: 7860
-fullWidth: true
-short_description: Ollama ve araç çağrılarıyla güncel CVE ve siber güvenlik haberleri
-tags:
-  - ollama
-  - cybersecurity
-  - tool-calling
-  - cve
-  - turkish
----
-
 # Siber Güvenlik Haber Asistanı
 
-Yerel bir Ollama modelinin güncel siber güvenlik kaynaklarını araç çağrılarıyla
-sorguladığı Türkçe Gradio uygulaması. Arayüz; modelin çağırdığı aracı,
-parametrelerini, dönen sonucu, tur numarasını ve nihai yanıtı ayrı ayrı gösterir.
-Modelin gizli düşünce metni gösterilmez.
+Ollama üzerinde çalışan yerel bir dil modelinin güncel siber güvenlik kaynaklarını
+araç çağrılarıyla sorguladığı Türkçe Gradio uygulaması.
 
-## Veri kaynakları
+Model; CVE, aktif istismar, güvenlik duyurusu, haber ve tehdit istihbaratı
+sorularında uygun veri kaynağını seçer. Arayüz her araç çağrısını, parametrelerini,
+sonucunu, tur numarasını ve nihai yanıtı kullanıcıya gösterir.
 
-Anahtarsız kullanılabilen kaynaklar:
+[Hugging Face Space](https://huggingface.co/spaces/samliumay/CI_Assistani) ·
+[Ollama](https://docs.ollama.com/) ·
+[Gradio](https://www.gradio.app/)
 
-- GDELT — güncel haber araması
-- CISA KEV — aktif istismar edildiği bilinen zafiyetler
-- NIST NVD — CVE arama ve ayrıntıları
-- CISA RSS ve CERT/CC Atom — resmi güvenlik duyuruları
-- MITRE ATT&CK TAXII 2.1 — Enterprise teknikleri
+## Özellikler
 
-İsteğe bağlı kaynaklar:
+- Türkçe sistem promptu ve Türkçe araç tanımları
+- Birden fazla tur ve aynı turda paralel araç çağrısı desteği
+- Güncel bilgi sorularında otomatik API kullanımı
+- Araç adı, parametre, ham sonuç, süre ve model yanıtının görünür olması
+- CVSS skoru ile CISA KEV aktif istismar durumunun ayrı değerlendirilmesi
+- GDELT için yeniden deneme, geniş zaman aşımı ve beş dakikalık önbellek
+- Haber kaynakları çalışmadığında CISA ve CERT/CC duyurularına kontrollü geri dönüş
+- API anahtarlarının yalnızca sunucu ortam değişkenlerinden okunması
+- Yerel Python, Docker ve Hugging Face Docker Space desteği
 
-- NewsAPI (`NEWSAPI_KEY`)
-- AlienVault OTX (`OTX_API_KEY`)
-- NVD yüksek istek limiti (`NVD_API_KEY`)
-- Kurumsal MISP (`MISP_BASE_URL`, `MISP_API_KEY`)
+## Mimari
 
-API anahtarları hiçbir zaman kaynak koda veya model mesajına eklenmez; yalnızca
-sunucu tarafındaki ortam değişkenlerinden okunur.
+```mermaid
+flowchart LR
+    U[Kullanıcı] --> G[Gradio arayüzü]
+    G --> A[Çok turlu Ollama ajanı]
+    A --> M[Ollama modeli]
+    A --> T[Araç kayıt sistemi]
+    T --> N[Haber<br/>GDELT · NewsAPI]
+    T --> V[Zafiyet<br/>NVD · CISA KEV]
+    T --> D[Duyuru<br/>CISA · CERT/CC]
+    T --> I[İstihbarat<br/>OTX · MISP]
+    T --> K[Bilgi tabanı<br/>MITRE ATT&CK]
+    T --> A
+    A --> G
+```
 
-## Yerel çalıştırma
+Modelin gizli düşünce metni gösterilmez. Yalnızca denetlenebilir eylemler, araç
+sonuçları ve kullanıcıya yönelik yanıt arayüzde sunulur.
 
-Gereksinimler:
+## Veri kaynakları ve araçlar
 
-- Python 3.11+
-- Çalışan bir [Ollama](https://docs.ollama.com/) sunucusu
+| Araç | Kaynak | Amaç |
+|---|---|---|
+| `siber_haberlerini_ara` | GDELT, NewsAPI | Güncel siber güvenlik haberleri |
+| `son_cve_kayitlarini_getir` | NIST NVD | Yakın zamanda yayımlanan CVE kayıtları |
+| `cve_detayi_getir` | NVD, CISA KEV, OTX | Tek bir CVE için zenginleştirilmiş analiz |
+| `aktif_istismar_edilenleri_ara` | CISA KEV | Aktif istismar edildiği bilinen zafiyetler |
+| `guvenlik_duyurularini_getir` | CISA, CERT/CC | Resmî güvenlik duyuruları |
+| `tehdit_istihbarati_ara` | AlienVault OTX, MISP | Pulse, kampanya ve kurumsal istihbarat |
+| `mitre_attack_tekniklerini_ara` | MITRE ATT&CK TAXII | Enterprise ATT&CK teknikleri |
+
+GDELT, CISA KEV, temel NVD erişimi, CISA RSS, CERT/CC ve MITRE ATT&CK API
+anahtarı olmadan kullanılabilir. NewsAPI, OTX, yüksek limitli NVD ve MISP erişimi
+isteğe bağlıdır.
+
+## Gereksinimler
+
+- Python 3.11 veya üzeri
+- [Ollama](https://docs.ollama.com/) sunucusu
 - Araç çağrısını destekleyen bir Ollama modeli
+- İnternet erişimi; güncel veri kaynaklarını sorgulamak için gereklidir
+
+Varsayılan model `qwen3.6:latest` modelidir. Yaklaşık 24 GB disk alanı kullanır.
+Daha hafif bir geliştirme ortamı için araç destekli daha küçük bir model
+`OLLAMA_MODEL` üzerinden seçilebilir.
+
+## Hızlı başlangıç
+
+### 1. Ollama'yı hazırlayın
 
 ```bash
 ollama serve
+```
+
+Başka bir terminalde:
+
+```bash
 ollama pull qwen3.6:latest
-cp .env.example .env
+```
+
+### 2. Python bağımlılıklarını kurun
+
+`uv` ile:
+
+```bash
 uv sync
+```
+
+Standart `venv` ve `pip` ile:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 3. Yapılandırın
+
+Örnek dosyayı kopyalayın:
+
+```bash
+cp .env.example .env
+```
+
+Uygulama `.env` dosyasını otomatik yüklemez. Değerleri mevcut kabuğa aktarmak
+için:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+### 4. Uygulamayı çalıştırın
+
+```bash
 uv run python app.py
 ```
 
-`uv` kullanmıyorsanız:
+veya etkin sanal ortamda:
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
 python app.py
 ```
 
-Uygulama varsayılan olarak `http://127.0.0.1:11434` ve
-`qwen3.6:latest` kullanır. Ayarlar kabuktan verilebilir:
+Arayüz varsayılan olarak `http://127.0.0.1:7860` adresinde açılır.
 
-```bash
-export OLLAMA_MODEL=qwen3.6:latest
-export NEWSAPI_KEY=...
-export NVD_API_KEY=...
-python app.py
-```
+## Örnek kullanım
 
-`.env` dosyası örnek amaçlıdır; Python uygulaması bu dosyayı kendiliğinden
-yüklemez. Değerleri kabuğa aktarın veya dağıtım platformunun secret yönetimini
-kullanın.
-
-## Çalışma biçimi
-
-Örnek soru:
+Kullanıcı:
 
 > Son 7 günde yayımlanan kritik CVE'leri bul ve aktif istismar durumlarını kontrol et.
 
-Beklenen akış:
+Beklenen ajan akışı:
 
-1. Model `son_cve_kayitlarini_getir` aracını çağırır.
-2. Dönen CVE'lerden gerekli gördükleri için `cve_detayi_getir` veya
-   `aktif_istismar_edilenleri_ara` çağrısını yapar.
-3. Arayüz her çağrıyı ve sonucu tur bazında gösterir.
-4. Model, tarih ve kaynak bağlantıları içeren Türkçe nihai yanıtı üretir.
+```text
+[Tur 1]
+→ son_cve_kayitlarini_getir(son_gun=7, sonuc_sayisi=...)
+← NVD CVE sonuçları
 
-Model en fazla altı araç turu çalıştırabilir. Bu sınır hatalı veya sonsuz araç
+[Tur 2]
+→ cve_detayi_getir(cve_id="CVE-...")
+← NVD + CISA KEV + isteğe bağlı OTX sonucu
+
+[Tur 3]
+→ Türkçe nihai yanıt, tarihler ve kaynak bağlantıları
+```
+
+Ajan en fazla altı araç turu çalıştırabilir. Bu sınır hatalı veya sonsuz araç
 döngülerini engeller.
 
 ## Yapılandırma
+
+### Ollama ve uygulama
 
 | Değişken | Varsayılan | Açıklama |
 |---|---:|---|
 | `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama veya uyumlu güvenli geçit |
 | `OLLAMA_MODEL` | `qwen3.6:latest` | Kullanılacak model |
-| `OLLAMA_API_KEY` | boş | Uzak geçit için Bearer anahtarı |
+| `OLLAMA_API_KEY` | boş | Kimlik doğrulamalı uzak geçit için Bearer anahtarı |
 | `OLLAMA_TIMEOUT_SECONDS` | `300` | Model yanıt zaman aşımı |
-| `OLLAMA_NUM_CTX` | `16384` | Bağlam penceresi |
+| `OLLAMA_NUM_CTX` | `16384` | Model bağlam penceresi |
 | `OLLAMA_TEMPERATURE` | `0.2` | Üretim sıcaklığı |
+| `OLLAMA_KEEP_ALIVE` | `10m` | Modelin bellekte tutulma süresi |
+| `GRADIO_SERVER_NAME` | `127.0.0.1` | Gradio dinleme adresi |
+| `GRADIO_SERVER_PORT` | `7860` | Gradio portu |
+
+### Harici kaynaklar
+
+| Değişken | Varsayılan | Açıklama |
+|---|---:|---|
 | `CYBER_API_CONNECT_TIMEOUT` | `20` | Genel API bağlantı zaman aşımı |
 | `CYBER_API_READ_TIMEOUT` | `60` | Genel API okuma zaman aşımı |
-| `GDELT_CONNECT_TIMEOUT` | `30` | GDELT için bağlantı zaman aşımı |
-| `GDELT_READ_TIMEOUT` | `75` | GDELT için okuma zaman aşımı |
+| `GDELT_CONNECT_TIMEOUT` | `30` | GDELT bağlantı zaman aşımı |
+| `GDELT_READ_TIMEOUT` | `75` | GDELT okuma zaman aşımı |
 | `CYBER_NEWS_CACHE_SECONDS` | `300` | Aynı haber sorgusunun önbellek süresi |
 | `NEWSAPI_KEY` | boş | NewsAPI erişimi |
 | `NVD_API_KEY` | boş | Daha yüksek NVD istek limiti |
@@ -120,60 +187,26 @@ döngülerini engeller.
 | `MISP_API_KEY` | boş | MISP erişim anahtarı |
 | `MISP_VERIFY_TLS` | `true` | MISP TLS sertifika doğrulaması |
 
-## Hugging Face Docker Space
+API anahtarlarını `.env`, Dockerfile, commit, issue veya uygulama çıktısına
+yazmayın. Bir anahtar yanlışlıkla paylaşılırsa derhâl iptal edip yenisini oluşturun.
 
-Depo, Ollama ile Gradio'yu aynı container içinde çalıştıran Docker Space düzenine
-hazırdır. `start.sh` önce Ollama'yı başlatır, `OLLAMA_MODEL` ile seçilen modeli
-indirir ve ardından Gradio'yu `0.0.0.0:7860` üzerinde açar. Yalnızca Gradio portu
-dışarı açılır; Ollama container içinde `127.0.0.1:11434` adresinde kalır.
+## Docker
 
-Space oluşturma ve yükleme örneği:
-
-```bash
-hf auth login --add-to-git-credential
-hf repos create KULLANICI_ADI/siber-guvenlik-asistani --repo-type space --sdk docker
-git remote add space https://huggingface.co/spaces/KULLANICI_ADI/siber-guvenlik-asistani
-git push space main
-```
-
-Space secret değerlerini Hugging Face web arayüzündeki **Settings → Variables and
-secrets** bölümünden ekleyin. Her push sonrasında Space otomatik olarak yeniden
-oluşturulur.
-
-Önerilen Space değişkenleri:
-
-```text
-OLLAMA_MODEL=qwen3.6:latest
-OLLAMA_NUM_CTX=16384
-```
-
-`NEWSAPI_KEY`, `NVD_API_KEY`, `OTX_API_KEY` ve MISP erişim bilgilerini yalnızca
-Space secret olarak ekleyin. Bunları Dockerfile'a veya Git deposuna yazmayın.
-
-`qwen3.6:latest` yaklaşık 24 GB'tır. Model ağırlıkları ile çalışma belleğine yer
-kalması için 48 GB VRAM'li bir GPU güvenli tercihtir. Daha küçük donanım ve daha
-düşük maliyet için örneğin `OLLAMA_MODEL=qwen3.5:9b` kullanılabilir.
-
-Space diski geçiciyse model her yeniden oluşturmada tekrar indirilir. Bir Storage
-Bucket `/data` yoluna bağlanırsa Space değişkenini aşağıdaki gibi ayarlayarak model
-önbelleği kalıcı tutulabilir:
-
-```text
-OLLAMA_MODELS=/data/ollama-models
-```
-
-### Docker'ı yerelde sınama
-
-CPU ile yalnızca container başlangıcını sınamak için:
+Image oluşturma:
 
 ```bash
 docker build -t siber-guvenlik-asistani .
+```
+
+Küçük bir modelle CPU üzerinde geliştirme:
+
+```bash
 docker run --rm -p 7860:7860 \
   -e OLLAMA_MODEL=qwen3.5:4b \
   siber-guvenlik-asistani
 ```
 
-NVIDIA Container Toolkit kurulu bir makinede GPU ile:
+NVIDIA Container Toolkit kurulu bir sistemde GPU kullanımı:
 
 ```bash
 docker run --rm --gpus all -p 7860:7860 \
@@ -181,19 +214,105 @@ docker run --rm --gpus all -p 7860:7860 \
   siber-guvenlik-asistani
 ```
 
-## Testler
+`start.sh`; Ollama sunucusunu başlatır, eksikse modeli indirir ve Gradio'yu
+`0.0.0.0:7860` üzerinde çalıştırır. Ollama portu container dışına açılmaz.
+
+## Hugging Face Docker Space
+
+Docker dağıtım dosyaları bu depoda tutulur; canlı Space ayrı bir Hugging Face Git
+deposunda yayınlanır:
+
+[samliumay/CI_Assistani](https://huggingface.co/spaces/samliumay/CI_Assistani)
+
+Space deposundaki README dosyasında Hugging Face metadata başlığı bulunmalıdır:
+
+```yaml
+---
+title: Siber Güvenlik Haber Asistanı
+emoji: 🛡️
+sdk: docker
+app_port: 7860
+short_description: Ollama ile güncel CVE ve siber güvenlik asistanı
+---
+```
+
+Hassas değerleri Space içindeki **Settings → Variables and secrets** bölümüne
+ekleyin. `qwen3.6:latest` gibi büyük modeller için yeterli GPU belleği ve model
+indirme süresi planlanmalıdır.
+
+## Proje yapısı
+
+```text
+.
+├── app.py                         # Gradio arayüzü
+├── main.py                        # Alternatif yerel giriş noktası
+├── ollama/
+│   ├── cyber_security_tools.py    # API istemcileri ve araç şemaları
+│   └── ollama_local_model_managment_code.py
+│                                     # Çok turlu Ollama ajan döngüsü
+├── tests/test_agent.py            # Ağsız birim testleri
+├── Dockerfile                     # Ollama + Gradio container
+├── start.sh                       # Container başlangıç akışı
+├── requirements.txt               # Space/pip bağımlılıkları
+└── pyproject.toml                 # Python proje ve geliştirme ayarları
+```
+
+## Test ve doğrulama
+
+Birim testleri gerçek API veya Ollama bağlantısı kurmaz:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-Testler gerçek API veya Ollama bağlantısı kurmadan araç şemalarını, CVE
-normalizasyonunu ve çok turlu araç döngüsünü doğrular.
+Sözdizimi ve whitespace kontrolü:
+
+```bash
+python -m compileall -q app.py main.py ollama tests
+git diff --check
+```
+
+Docker image doğrulaması:
+
+```bash
+docker build -t siber-guvenlik-asistani .
+```
+
+## Sorun giderme
+
+### Ollama sunucusuna ulaşılamıyor
+
+```bash
+ollama list
+```
+
+Başarısızsa `ollama serve` çalıştırın ve `OLLAMA_BASE_URL` değerini kontrol edin.
+Docker içinde bu adres varsayılan olarak `http://127.0.0.1:11434` olmalıdır.
+
+### GDELT yavaş veya HTTP 429 döndürüyor
+
+Uygulama yeniden deneme ve önbellek kullanır. Gerekirse `GDELT_CONNECT_TIMEOUT`,
+`GDELT_READ_TIMEOUT` ve `CYBER_NEWS_CACHE_SECONDS` değerlerini artırın. NewsAPI
+anahtarı eklemek ikinci bir haber kaynağı sağlar.
+
+### Docker ilk açılışta uzun süre bekliyor
+
+Model image oluşturulurken değil, container ilk çalıştığında indirilir. Büyük
+modellerin indirilmesi ve belleğe yüklenmesi birkaç dakika sürebilir.
 
 ## Güvenlik ve doğruluk
 
-- Uygulama savunma ve haber analizi amaçlıdır.
-- Güncel veri kaynakları gecikebilir veya geçici olarak hata verebilir.
-- CVSS puanı tek başına aktif istismar kanıtı değildir; KEV durumu ayrıca gösterilir.
-- Kritik operasyonel kararlar özgün CISA, NVD, CERT/CC veya üretici duyurusundan
-  doğrulanmalıdır.
+- Uygulama savunma, haber takibi ve risk analizi amaçlıdır.
+- Güncel kaynaklar gecikebilir, oran sınırına ulaşabilir veya geçici hata verebilir.
+- CVSS puanı tek başına aktif istismar kanıtı değildir; CISA KEV ayrıca kontrol edilir.
+- Modelin sentezlediği bilgiler kritik kararlardan önce özgün CISA, NVD, CERT/CC
+  veya üretici duyurusundan doğrulanmalıdır.
+- Ollama uzak sunucuda çalışıyorsa TLS ve kimlik doğrulama arkasında tutulmalıdır.
+
+## Katkı
+
+Issue ve pull request açmadan önce:
+
+1. Sır veya model ağırlığı eklemediğinizden emin olun.
+2. Birim testlerini çalıştırın.
+3. Yeni araç ekliyorsanız Türkçe şema açıklamasını ve hata davranışını belgeleyin.

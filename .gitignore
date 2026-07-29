@@ -1,7 +1,85 @@
+# Ortam değişkenleri ve sırlar
 .env
-.venv/
+.env.*
+!.env.example
+*.pem
+*.p12
+*.pfx
+*.crt
+*.key
+
+# Python bytecode ve önbellekleri
 __pycache__/
 *.py[cod]
+*$py.class
+.python_history
+.ipynb_checkpoints/
+
+# Sanal ortamlar
+.venv/
+venv/
+env/
+ENV/
+
+# Test, coverage ve analiz çıktıları
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.pyre/
+.hypothesis/
+.tox/
+.nox/
 .coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Paketleme ve build çıktıları
+build/
+dist/
+site/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# Ollama ve model ağırlıkları
+.ollama/
+ollama-models/
+models/
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+
+# Gradio ve uygulama çalışma çıktıları
+flagged/
+gradio_cached_examples/
+logs/
+*.log
+*.pid
+
+# Yerel veri ve geçici indirmeler
+data/
+downloads/
+*.tmp
+*.temp
+*.cache
+kev.json
+
+# IDE ve editör ayarları
+.idea/
+.vscode/
+*.code-workspace
+*.swp
+*.swo
+*~
+
+# İşletim sistemi dosyaları
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Araçlara özel yerel dosyalar
+.docker/
+.huggingface/
